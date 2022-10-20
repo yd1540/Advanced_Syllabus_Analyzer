@@ -14,11 +14,14 @@ library('tidytext')
 library("tm")
 library("xtable")
 library("xml2")
+library("httr")
+
 
 
 #import occupation data
 occupation <- read.csv(file = "Occupation_Data.csv")
 
+if (.Platform$GUI == "AQUA") return(1L)
 
 #Function: TD-IDF text similarity analysis-------------------------------------------------------------------------
 
@@ -87,7 +90,12 @@ scoreResult = function(input1, input2 = occupation) {
 
 #Function: Scrape jobs from Indeed.com-------------------------------------------------------------------------
 
-
+# headers <- c("User-Agent"="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36",
+#               "Accept"= "*/*",
+#              "Cookie"= 'CTK=1gfa1bn33h1i8800; _ga=GA1.2.2119129848.1665710549; _gid=GA1.2.831973622.1665710549; mobbcpc=1; LC="co=CN"; indeed_rcc="LV:CTK:UD"; __cf_bm=7QGYvCv5KbsuVvFGhS04k2O_zZldrpE__t_lzqva0ag-1665712575-0-AWxWgfAMNoR1ma6VAbwiWphS5LsJqYE3dk755zu64Znti6yGwqkzEoiBo5a4Ac2Q7LSBiVi0cQjvaEcDIUDKXYs=; cf_clearance=U4rmjfzZt7Btp2z0gnnebotf_jjMifOtOvCglC_SkrE-1665712590-0-150; gonetap=5; INDEED_CSRF_TOKEN=JrQnhD4ShGnmvzMY1gbH8P4TiT194EiN; _cfuvid=emRBiEdIrXV7iFwssxFh4fzBaILOKquxLZqGhMTLZS8-1665712770017-0-604800000; _gat=1; SHARED_INDEED_CSRF_TOKEN=JrQnhD4ShGnmvzMY1gbH8P4TiT194EiN; SURF=2IxSJThgA5KJu801iW0DYvkF2Ouxwed9; CSRF=lHaH5cn2lLIAXO9BarSFUqxDESvYhkIq; _gali=jobsearch; loctip=1; LV="LA=1665712785:CV=1665710546:TS=1665710546"; CO=US; LOCALE=en; MICRO_CONTENT_CSRF_TOKEN=BiTiQPjY350JiBMMGwpBMWHnETxguGHK; PPID=""; jaSerpCount=3; UD="LA=1665712794:CV=1665710546:TS=1665710546:SG=3b05303354af185de3924a34dc37aebd"; RQ="q=Business+intelligence+Analyst&l=&ts=1665712795026:q=Data+Entry+Keyer&l=&ts=1665712769716"; JSESSIONID=2273A89AC325D75E13C6F8D0E43D9677',
+#              "accept-language"= "zh-CN,zh;q=0.9",
+#              "referer"="https://www.indeed.com/jobs?q=Business+intelligence+Analyst&l=&vjk=1e17da0c9035fcf4",
+#              "sec-fetch-mode"="cors")
 
 page_result_start <- 0 # starting page 
 page_result_end <- 5 # last page results
@@ -96,15 +104,18 @@ page_results <- seq(from = page_result_start, to = page_result_end, by = 5)
 full_df <- data.frame()
 
 parse_job <- function(input_vector) {
-  occu_list <- gsub(" ","%20",input_vector)
+  occu_list <- gsub(" ","+",input_vector)
   for (occu in occu_list){
     #for (i in seq_along(page_results)){
     
     #url <- paste0("https://www.indeed.com/jobs?q=",occu,"&l","&start=",page_results[i],"&vjk=eca30ac0a79b0ddb")
     #url <- paste0("https://www.indeed.com/jobs?q=",occu,"&l","&start=","&vjk=eca30ac0a79b0ddb")
     url <- paste0("https://www.indeed.com/jobs?q=",occu)
-    page <- xml2::read_html(url)
+    #httr::set_config(httr::user_agent(headers))
     
+    page <- url%>% GET(add_headers(headers))%>% content()
+    #page <- read_html(httr::POST(url = url))
+  
     # Sys.sleep pauses R for two seconds before it resumes
     # Putting it there avoids error messages such as "Error in open.connection(con, "rb") : Timeout was reached"
     Sys.sleep(2)
@@ -112,9 +123,15 @@ parse_job <- function(input_vector) {
     #Get the job title
     job_title <- page %>%
       rvest::html_nodes("div") %>%
-      rvest::html_nodes(xpath = '//*[@class = "jobTitle jobTitle-color-purple jobTitle-newJob"]')%>%
+      rvest::html_nodes(xpath = '//*[contains(@class, "jobTitle")]')%>%
       rvest::html_nodes(xpath = '//span[@title]') %>%
-      rvest::html_text() 
+      rvest::html_text()
+    
+    # job_title <- page %>%
+    #   rvest::html_nodes("div") %>%
+    #   rvest::html_nodes(xpath = '//*[contains(@class, "jobTitle")]')%>%
+    #   rvest::html_nodes(xpath = '//span[@title]') %>%
+    #   rvest::html_text()
     
     
     #Get the company name 
@@ -138,8 +155,8 @@ parse_job <- function(input_vector) {
     
     job_description_snippet <- paste(substr(job_snippet,1,nchar(job_snippet)-2 ),"...",sep="")
     
-    job_occupation <- gsub("%20"," ",occu)
-    
+    job_occupation <- gsub("+","",occu)
+    #job_occupation <- occu
     job_link <- page %>%
       rvest::html_nodes('a') %>%
       rvest::html_nodes(xpath = '//*[contains(@data-hide-spinner,"true")]') %>%
@@ -150,22 +167,25 @@ parse_job <- function(input_vector) {
     # df <- data.frame(job_title,company_name,job_location,job_occupation, job_description_snippet,link)
     # names(df)[5] <- "Description"
     # full_df <- rbind(full_df,df)
+  
+
+    
     
     if (length(job_title) != 0){
       df <- data.frame(job_title,company_name,job_location,job_occupation, job_description_snippet,link)
       names(df)[5] <- "Description"
       full_df <- rbind(full_df,df)
     } else {
-      df <- data.frame(job_title = "No results found for this occupation", 
-                       company_name = "N/A", 
-                       job_location = "N/A", 
+      df <- data.frame(job_title = "No results found for this occupation",
+                       company_name = "N/A",
+                       job_location = "N/A",
                        job_occupation,
                        job_description_snippet = "N/A",
                        link = "N/A")
       names(df)[5] <- "Description"
       full_df <- rbind(full_df,df)
     }
-    
+
   }
   return(full_df) 
 }

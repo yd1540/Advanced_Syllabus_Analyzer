@@ -17,7 +17,9 @@ server<-function(input, output, session){
   job_indeed <- eventReactive(input$go_jobs,{
     #req(input$checka |)
     selected <- c(input$checka, input$checkb, input$checkc)
+    
     jobs <- parse_job(selected)
+    print(jobs)
     jobs
   })
   
